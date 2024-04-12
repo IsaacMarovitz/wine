@@ -11,6 +11,7 @@ SOURCES = \
 	buffer.c \
 	context.c \
 	context_gl.c \
+	context_mtl.c \
 	context_vk.c \
 	cs.c \
 	device.c \

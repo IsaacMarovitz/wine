@@ -19,6 +19,14 @@
 #ifndef __WINE_WINED3D_MTL_H
 #define __WINE_WINED3D_MTL_H
 
+#include "stdint.h"
+#include "wine/wined3d.h"
+#include "wined3d_private.h"
 #include "<Metal/Metal.h>"
+
+struct wined3d_adapter_mtl
+{
+    struct wined3d_adapter a;
+};
 
 #endif /*__WINE_WINED3D_MTL*/

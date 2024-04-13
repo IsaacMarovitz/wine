@@ -23,6 +23,46 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d);
 
+static const struct wined3d_adapter_ops wined3d_adapter_mtl_ops =
+{
+    .adapter_destroy = NULL,
+    .adapter_create_device = NULL,
+    .adapter_destroy_device = NULL,
+    .adapter_acquire_context = NULL,
+    .adapter_release_context = NULL,
+    .adapter_get_wined3d_caps = NULL,
+    .adapter_check_format = NULL,
+    .adapter_init_3d = NULL,
+    .adapter_uninit_3d = NULL,
+    .adapter_map_bo_address = NULL,
+    .adapter_unmap_bo_address = NULL,
+    .adapter_copy_bo_address = NULL,
+    .adapter_flush_bo_address = NULL,
+    .adapter_alloc_bo = NULL,
+    .adapter_destroy_bo = NULL,
+    .adapter_create_swapchain = NULL,
+    .adapter_destroy_swapchain = NULL,
+    .adapter_create_buffer = NULL,
+    .adapter_destroy_buffer = NULL,
+    .adapter_create_texture = NULL,
+    .adapter_destroy_texture = NULL,
+    .adapter_create_rendertarget_view = NULL,
+    .adapter_destroy_rendertarget_view = NULL,
+    .adapter_create_shader_resource_view = NULL,
+    .adapter_destroy_shader_resource_view = NULL,
+    .adapter_create_unordered_access_view = NULL,
+    .adapter_destroy_unordered_access_view = NULL,
+    .adapter_create_sampler = NULL,
+    .adapter_destroy_sampler = NULL,
+    .adapter_create_query = NULL,
+    .adapter_destroy_query = NULL,
+    .adapter_flush_context = NULL,
+    .adapter_draw_primitive = NULL,
+    .adapter_dispatch_compute = NULL,
+    .adapter_clear_uav = NULL,
+    .adapter_generate_mipmap = NULL,
+};
+
 static BOOL wined3d_load_metal()
 {
     return TRUE;

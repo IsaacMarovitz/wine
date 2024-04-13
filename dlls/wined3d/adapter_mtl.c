@@ -23,6 +23,104 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d);
 
+static HRESULT adapter_mtl_create_texture(struct wined3d_device *device,
+        const struct wined3d_resource_desc *desc, unsigned int layout_count, unsigned int level_count,
+        uint32_t flags, void *parent, const struct wined3d_parent_ops *parent_ops, struct wined3d_texture **texture)
+{
+    FIXME("Texture creation requested.");
+}
+
+static void adapter_mtl_destroy_texture(struct wined3d_texture *texture)
+{
+    FIXME("Texture destruction requested.");
+}
+
+static HRESULT adapter_mtl_create_rendertarget_view(const struct wined3d_view_desc *desc,
+        struct wined3d_resource *resource, void *parent, const struct wined3d_parent_ops *parent_ops,
+        struct wined3d_rendertarget_view **view)
+{
+    FIXME("Render target view creation requested.");
+}
+
+static void adapter_mtl_destroy_rendertarget_view(struct wined3d_rendertarget_view *view)
+{
+    FIXME("Render target view destruction requested.");
+}
+
+static HRESULT adapter_mtl_create_shader_resource_view(const struct wined3d_view_desc *desc,
+        struct wined3d_resource *resource, void *parent, const struct wined3d_parent_ops *parent_ops,
+        struct wined3d_shader_resource_view **view)
+{
+    FIXME("Shader resource view construction requested.");
+}
+
+static void adapter_mtl_destroy_shader_resource_view(struct wined3d_shader_resource_view *view)
+{
+    FIXME("Shader resource view destruction requested.");
+}
+
+static HRESULT adapter_mtl_create_unordered_access_view(const struct wined3d_view_desc *desc,
+        struct wined3d_resource *resource, void* parent, const struct wined3d_parent_ops *parent_ops,
+        struct wined3d_unordered_access_view **view)
+{
+    FIXME("Unordered access view construction requested.");
+}
+
+static void adapter_mtl_destroy_unordered_access_view(struct wined3d_unordered_access_view *view)
+{
+    FIXME("Unordered access view destruction requested.");
+}
+
+static HRESULT adapter_mtl_create_sampler(struct wined3d_device *device, const struct wined3d_sampler_desc *desc,
+        void *parent, const struct wined3d_parent_ops *parent_ops, struct wined3d_sampler **sampler)
+{
+    FIXME("Sampler construction requested.");
+}
+
+static void adapter_mtl_destroy_sampler(struct wined3d_sampler *sampler)
+{
+    FIXME("Sampler destruction requested.");
+}
+
+static HRESULT adapter_mtl_create_query(struct wined3d_device *device, enum wined3d_query_type type,
+        void *parent, const struct wined3d_parent_ops *parent_ops, struct wined3d_query **query)
+{
+    FIXME("Query creation requested.");
+}
+
+static void adapter_mtl_destroy_query(struct wined3d_query *query)
+{
+    FIXME("Query destruction requested.");
+}
+
+static void adapter_mtl_flush_context(struct wined3d_context *context)
+{
+    FIXME("Context flush requested.");
+}
+
+static void adapter_mtl_draw_primitive(struct wined3d_device *device,
+        const struct wined3d_state *state, const struct wined3d_draw_parameters *parameters)
+{
+    FIXME("Primitive draw requested.");
+}
+
+static void adapter_mtl_dispatch_compute(struct wined3d_device *device,
+        const struct wined3d_state *state, const struct wined3d_dispatch_parameters *parameters)
+{
+    FIXME("Compute dispatch requested.");
+}
+
+static void adapter_mtl_clear_uav(struct wined3d_context *context,
+        struct wined3d_unordered_access_view *view, const struct wined3d_uvec4 *clear_value, bool fp)
+{
+    FIXME("UAV Clear requested.");
+}
+
+static void adapter_mtl_generate_mipmap(struct wined3d_context *context, struct wined3d_shader_resource_view *view)
+{
+    FIXME("Mipmap generation requested");
+}
+
 static const struct wined3d_adapter_ops wined3d_adapter_mtl_ops =
 {
     .adapter_destroy = NULL,
@@ -44,23 +142,23 @@ static const struct wined3d_adapter_ops wined3d_adapter_mtl_ops =
     .adapter_destroy_swapchain = NULL,
     .adapter_create_buffer = NULL,
     .adapter_destroy_buffer = NULL,
-    .adapter_create_texture = NULL,
-    .adapter_destroy_texture = NULL,
-    .adapter_create_rendertarget_view = NULL,
-    .adapter_destroy_rendertarget_view = NULL,
-    .adapter_create_shader_resource_view = NULL,
-    .adapter_destroy_shader_resource_view = NULL,
-    .adapter_create_unordered_access_view = NULL,
-    .adapter_destroy_unordered_access_view = NULL,
-    .adapter_create_sampler = NULL,
-    .adapter_destroy_sampler = NULL,
-    .adapter_create_query = NULL,
-    .adapter_destroy_query = NULL,
-    .adapter_flush_context = NULL,
-    .adapter_draw_primitive = NULL,
-    .adapter_dispatch_compute = NULL,
-    .adapter_clear_uav = NULL,
-    .adapter_generate_mipmap = NULL,
+    .adapter_create_texture = adapter_mtl_create_texture,
+    .adapter_destroy_texture = adapter_mtl_destroy_texture,
+    .adapter_create_rendertarget_view = adapter_mtl_create_rendertarget_view,
+    .adapter_destroy_rendertarget_view = adapter_mtl_destroy_rendertarget_view,
+    .adapter_create_shader_resource_view = adapter_mtl_create_shader_resource_view,
+    .adapter_destroy_shader_resource_view = adapter_mtl_destroy_shader_resource_view,
+    .adapter_create_unordered_access_view = adapter_mtl_create_unordered_access_view,
+    .adapter_destroy_unordered_access_view = adapter_mtl_destroy_unordered_access_view,
+    .adapter_create_sampler = adapter_mtl_create_sampler,
+    .adapter_destroy_sampler = adapter_mtl_destroy_sampler,
+    .adapter_create_query = adapter_mtl_create_query,
+    .adapter_destroy_query = adapter_mtl_destroy_query,
+    .adapter_flush_context = adapter_mtl_flush_context,
+    .adapter_draw_primitive = adapter_mtl_draw_primitive,
+    .adapter_dispatch_compute = adapter_mtl_dispatch_compute,
+    .adapter_clear_uav = adapter_mtl_clear_uav,
+    .adapter_generate_mipmap = adapter_mtl_generate_mipmap,
 };
 
 static BOOL wined3d_load_metal()

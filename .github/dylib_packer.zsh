@@ -150,6 +150,9 @@ update_dylib_paths() {
   done
 }
 
+# Export the function to make it available in subshells
+export -f update_dylib_paths
+
 # Update dynamic library paths for copied libraries
 find Libraries/Wine/lib -maxdepth 1 -type f -name '*.dylib' -exec zsh -c 'update_dylib_paths "$0" "@loader_path/"' {} \;
 find Libraries/Wine/lib/gstreamer-1.0 -maxdepth 1 -type f -name '*.dylib' -exec zsh -c 'update_dylib_paths "$0" "@loader_path/../"' {} \;

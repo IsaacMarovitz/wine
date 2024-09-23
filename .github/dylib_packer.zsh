@@ -137,15 +137,15 @@ update_dylib_paths() {
   # Extract LC_LOAD_DYLIB paths using otool
   local load_dylibs=$(otool -L "$dylib_file" | grep -v "$dylib_file" | awk '{print $1}')
 
-  for path in $load_dylibs; do
-    if [[ $path != /usr/lib* && $path != /System/* ]]; then
+  for dylib_path in $load_dylibs; do
+    if [[ $dylib_path != /usr/lib* && $dylib_path != /System/* ]]; then
       # For paths not excluded, replace the prefix with @loader_path/
-      local lib_name="${path##*/}"
-      local new_path="${path_prefix}${lib_name}"
-      echo "Updating $path to $new_path"
+      local lib_name="${dylib_path##*/}"
+      local new_dylib_path="${path_prefix}${lib_name}"
+      echo "Updating $dylib_path to $new_path"
       # Use install_name_tool to change the path
-      /usr/bin/install_name_tool -change "$path" "$new_path" "$dylib_file"
-      /usr/bin/codesign -fs- "$dylib_file"
+      install_name_tool -change "$dylib_path" "$new_dylib_path" "$dylib_file"
+      codesign -fs- "$dylib_file"
     fi
   done
 }

@@ -144,11 +144,13 @@ update_dylib_paths() {
       local new_path="${path_prefix}${lib_name}"
       echo "Updating $path to $new_path"
       # Use install_name_tool to change the path
-      install_name_tool -change "$path" "$new_path" "$dylib_file"
-      codesign -fs- "$dylib_file"
+      /usr/bin/install_name_tool -change "$path" "$new_path" "$dylib_file"
+      /usr/bin/codesign -fs- "$dylib_file"
     fi
   done
 }
+
+export -f update_dylib_paths
 
 # Update dynamic library paths for copied libraries
 find Libraries/Wine/lib -maxdepth 1 -type f -name '*.dylib' -exec bash -c 'update_dylib_paths "$0" "@loader_path/"' {} \;

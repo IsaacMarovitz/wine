@@ -150,12 +150,14 @@ update_dylib_paths() {
   done
 }
 
-# Export the function to make it available in subshells
-export -f update_dylib_paths
-
 # Update dynamic library paths for copied libraries
-find Libraries/Wine/lib -maxdepth 1 -type f -name '*.dylib' -exec zsh -c 'update_dylib_paths "$0" "@loader_path/"' {} \;
-find Libraries/Wine/lib/gstreamer-1.0 -maxdepth 1 -type f -name '*.dylib' -exec zsh -c 'update_dylib_paths "$0" "@loader_path/../"' {} \;
+for dylib in $(find Libraries/Wine/lib -maxdepth 1 -type f -name '*.dylib'); do
+  update_dylib_paths "$dylib" "@loader_path/"
+done
+
+for dylib in $(find Libraries/Wine/lib/gstreamer-1.0 -maxdepth 1 -type f -name '*.dylib'); do
+  update_dylib_paths "$dylib" "@loader_path/../"
+done
 
 # Update specific GStreamer shared object
 update_dylib_paths Libraries/Wine/lib/wine/x86_64-unix/winegstreamer.so "@rpath/"

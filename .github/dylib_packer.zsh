@@ -25,7 +25,8 @@ GSTREAMER_LIBS=(
 
 # Global array to store all discovered dylibs, with unique entries only
 typeset -aU all_dylibs
-typeset -a queue # Queue for iterative processing
+# Queue for iterative processing
+typeset -a queue
 
 # Function to resolve @rpath dependencies by searching in Homebrew's lib directory
 resolve_rpath() {
@@ -87,6 +88,25 @@ find_dylib_dependencies() {
   done
 }
 
+# Function to fix up brew dylib LCs
+update_dylib_paths() {
+  local dylib_file="$1"
+  local path_prefix="$2"
+  echo "Processing $dylib_file..."
+
+  otool -L "$dylib_file" | grep -v "$dylib_file" | awk '{print $1}' | while read -r dylib_path; do
+    if [[ $dylib_path != /usr/lib* && $dylib_path != /System/* ]]; then
+      # For paths not excluded, replace the prefix with @loader_path/
+      local lib_name="${dylib_path##*/}"
+      local new_dylib_path="${path_prefix}${lib_name}"
+      echo "Updating $dylib_path to $new_dylib_path"
+      # Use install_name_tool to change the path
+      install_name_tool -change "$dylib_path" "$new_dylib_path" "$dylib_file"
+      codesign -fs- "$dylib_file"
+    fi
+  done
+}
+
 # Function to copy the libraries into the appropriate directories
 copy_libraries() {
   local lib="$1"
@@ -99,9 +119,11 @@ copy_libraries() {
   if [[ "$lib" == *"/gstreamer-1.0/"* ]]; then
     echo "Copying GStreamer library: $lib -> $gstreamer_dir"
     cp "$lib" "$gstreamer_dir"
+    update_dylib_paths "$gstreamer_dir/$(basename "$lib")" "@loader_path/../"
   else
     echo "Copying non-GStreamer library: $lib -> $lib_dir"
     cp "$lib" "$lib_dir"
+    update_dylib_paths "$lib_dir/$(basename "$lib")" "@loader_path/"
   fi
 }
 
@@ -127,34 +149,6 @@ done
 
 # Copy GStreamer include files
 cp -a "$(brew --prefix gstreamer)/lib/gstreamer-1.0/include" Libraries/Wine/lib/gstreamer-1.0
-
-# Function to fix up brew dylib LCs
-update_dylib_paths() {
-  local dylib_file="$1"
-  local path_prefix="$2"
-  echo "Processing $dylib_file..."
-
-  otool -L "$dylib_file" | grep -v "$dylib_file" | awk '{print $1}' | while read -r dylib_path; do
-    if [[ $dylib_path != /usr/lib* && $dylib_path != /System/* ]]; then
-      # For paths not excluded, replace the prefix with @loader_path/
-      local lib_name="${dylib_path##*/}"
-      local new_dylib_path="${path_prefix}${lib_name}"
-      echo "Updating $dylib_path to $new_dylib_path"
-      # Use install_name_tool to change the path
-      install_name_tool -change "$dylib_path" "$new_dylib_path" "$dylib_file"
-      codesign -fs- "$dylib_file"
-    fi
-  done
-}
-
-# Update dynamic library paths for copied libraries
-for dylib in $(find Libraries/Wine/lib -maxdepth 1 -type f -name '*.dylib'); do
-  update_dylib_paths "$dylib" "@loader_path/"
-done
-
-for dylib in $(find Libraries/Wine/lib/gstreamer-1.0 -maxdepth 1 -type f -name '*.dylib'); do
-  update_dylib_paths "$dylib" "@loader_path/../"
-done
 
 # Update specific GStreamer shared object
 update_dylib_paths Libraries/Wine/lib/wine/x86_64-unix/winegstreamer.so "@rpath/"

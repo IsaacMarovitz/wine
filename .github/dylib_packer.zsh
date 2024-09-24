@@ -23,6 +23,12 @@ GSTREAMER_LIBS=(
     "libgstwavparse"
 )
 
+# Define the fixed array of non-GStreamer libraries
+LIBS=(
+    "libMoltenVK"
+    "libSDL2-2.0.0"
+)
+
 # Global array to store all discovered dylibs, with unique entries only
 typeset -aU all_dylibs
 # Queue for iterative processing
@@ -130,9 +136,24 @@ copy_libraries() {
 # Get the Homebrew prefix for gstreamer
 GSTREAMER_PREFIX=$(brew --prefix gstreamer)
 
+# Get generic Homebrew prefix
+PREFIX=$(brew --prefix)
+
 # Iterate over the fixed GStreamer libraries array
 for lib in "${GSTREAMER_LIBS[@]}"; do
   dylib_path="${GSTREAMER_PREFIX}/lib/gstreamer-1.0/${lib}.dylib"
+  
+  if [ -f "$dylib_path" ]; then
+    echo "Checking dependencies for: $dylib_path"
+    find_dylib_dependencies "$dylib_path"
+  else
+    echo "Error: $dylib_path not found"
+  fi
+done
+
+# Iterate over the fixed non-GStreamer libraries array
+for lib in "${LIBS[@]}"; do
+  dylib_path="${PREFIX}/lib/${lib}.dylib"
   
   if [ -f "$dylib_path" ]; then
     echo "Checking dependencies for: $dylib_path"

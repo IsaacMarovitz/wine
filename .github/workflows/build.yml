@@ -1,0 +1,211 @@
+name: Build Wine
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+env: 
+  CC: clang
+  CXX: clang++
+  CPATH: /usr/local/include
+  LIBRARY_PATH: /usr/local/lib
+  CFLAGS: -O3
+  CROSSCFLAGS: -O3 -Wno-error=incompatible-pointer-types -Wno-error=int-conversion
+  LDFLAGS: -Wl,-headerpad_max_install_names -Wl,-rpath,@loader_path/../../ -Wl,-rpath,/usr/local/lib
+  MACOSX_DEPLOYMENT_TARGET: 10.15
+  WINE_CONFIGURE: $GITHUB_WORKSPACE/configure
+  BUILDROOT: $GITHUB_WORKSPACE/build
+  WINE_INSTALLROOT: install
+  WINE_MONO: https://github.com/madewokherd/wine-mono/releases/download/wine-mono-8.1.0/wine-mono-8.1.0-x86.tar.xz
+
+jobs:
+  build:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Xcode 15
+        run: sudo xcode-select -switch /Applications/Xcode_15.2.app/Contents/Developer
+
+      - name: Install Homebrew Packages
+        continue-on-error: true
+        run: |
+          REQUIRED_PACKAGES=(
+              # Build Dependencies
+              "bison"
+              "pkg-config"
+              "gcenx/wine/cx-llvm"
+              "mingw-w64"
+
+              # Dependencies
+              "freetype"
+              "gettext"
+              "gnutls"
+              "gstreamer"
+              "sdl2"
+              "molten-vk"
+              "winetricks"
+          )
+
+          brew update
+          brew install "${REQUIRED_PACKAGES[@]}"
+
+      - name: Echo Libs [DEBUG]
+        run: |
+          echo "Brew Libs"
+          ls $(brew --prefix)/lib
+
+          echo "FFmpeg Libs" 
+          ls $(brew --prefix ffmpeg@7)/lib
+
+          echo "GStreamer Libs"
+          ls $(brew --prefix gstreamer)/lib/gstreamer-1.0
+
+      - name: Add bison & cx-llvm to $PATH
+        run: |
+          echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
+          echo "$(brew --prefix cx-llvm)/bin" >> $GITHUB_PATH
+
+      - name: Configure wine64
+        run: |
+          set -x
+
+          export ac_cv_lib_soname_MoltenVK="libMoltenVK.dylib"
+          export ac_cv_lib_soname_vulkan=""
+
+          mkdir -p ${{ env.BUILDROOT }}/wine64
+          pushd ${{ env.BUILDROOT }}/wine64
+          ${{ env.WINE_CONFIGURE }} \
+            --prefix= \
+            --enable-archs=i386,x86_64 \
+            --enable-win64 \
+            --disable-tests \
+            --disable-winedbg \
+            --without-alsa \
+            --without-capi \
+            --without-dbus \
+            --without-fontconfig \
+            --without-gettextpo \
+            --without-gphoto \
+            --without-gssapi \
+            --without-krb5 \
+            --without-netapi \
+            --without-inotify \
+            --without-oss \
+            --without-usb \
+            --without-v4l2 \
+            --without-sane \
+            --without-cups \
+            --without-pulse \
+            --without-udev \
+            --without-wayland \
+            --without-x \
+            --with-coreaudio \
+            --with-freetype \
+            --with-gettext \
+            --with-gnutls \
+            --with-gstreamer \
+            --with-mingw \
+            --with-opencl \
+            --with-opengl \
+            --with-vulkan \
+            --with-pcap \
+            --with-pthread \
+            --with-sdl \
+            --with-unwind
+          popd
+
+      - name: Build wine64
+        run: |
+          pushd ${{ env.BUILDROOT }}/wine64
+          make -j$(sysctl -n hw.ncpu 2>/dev/null)
+          popd
+
+      - name: Install wine64
+        run: |
+          pushd ${{ env.BUILDROOT }}/wine64
+          make install-lib DESTDIR="$GITHUB_WORKSPACE/${{ env.WINE_INSTALLROOT }}"
+          popd
+
+      - name: Grab Verbs From Winetricks
+        run: |
+          curl -L -o verbs.txt https://raw.githubusercontent.com/Winetricks/winetricks/master/files/verbs/all.txt
+
+      - name: Create Final Package
+        run: |
+          mkdir -p Libraries/DXVK
+          mkdir -p Libraries/Wine
+
+          cp -a ${{ env.WINE_INSTALLROOT }}/. Libraries/Wine/
+
+          rm -rf Libraries/Wine/share/man
+
+          cp -a $(brew --prefix winetricks)/bin/winetricks Libraries
+          cp -a verbs.txt Libraries
+          cp -a DXVK Libraries
+
+      - name: Copy External Libs
+        run: |
+          chmod +x .github/dylib_packer.zsh
+          .github/dylib_packer.zsh
+
+      - name: Install GPTK
+        run: |
+          ditto GPTK/redist/lib/ Libraries/Wine/lib/
+
+      - name: Copy Version .plist
+        run: |
+          cp -a WhiskyWineVersion.plist Libraries/
+
+      - name: Install WineMono
+        run: |
+          mkdir Libraries/Wine/share/wine/mono
+
+          curl -L -o mono.tar.xz ${{ env.WINE_MONO }}
+          tar -xzf mono.tar.xz -C Libraries/Wine/share/wine/mono
+
+      - name: Build Checksum
+        run: |
+          find ./Libraries -type f -exec shasum "{}" + > SUMS.sha
+
+      - name: Upload config64.log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: config64
+          path: build/wine64/config.log
+  
+      - name: Tar Libraries
+        if: success()
+        run: |
+          tar -zcf Libraries.tar.gz Libraries
+          
+      - name: Upload Libraries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Libraries
+          path: Libraries.tar.gz
+
+      - name: Upload SUMS
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SUMS
+          path: SUMS.sha
+
+      # - name: Upload Libraries to WhiskyBucket
+      #   if: ${{ github.ref == 'refs/heads/7.7' }}
+      #   env:
+      #     RCLONE_CONFIG_R2_TYPE: s3
+      #     RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+      #     RCLONE_CONFIG_R2_ACL: private
+      #     RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.RCLONE_ACCESS_KEY_ID }}
+      #     RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.RCLONE_SECRET_ACCESS_KEY }}
+      #     RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.RCLONE_ENDPOINT }}
+      #   run: |
+      #     brew install rclone
+      #     rclone copy Libraries.tar.gz r2:whisky-bucket/Wine
+      #     rclone copy WhiskyWineVersion.plist r2:whisky-bucket/Wine
+      #     rclone copy SUMS.sha r2:whisky-bucket/Wine

@@ -58,6 +58,9 @@ extern void move_window_bits_parent( HWND hwnd, HWND parent, const RECT *window_
                                      const RECT *valid_rects );
 extern void register_window_surface( struct window_surface *old,
                                      struct window_surface *new );
+extern struct window_surface *create_shm_surface( HWND hwnd, HWND parent, const RECT *visible_rect,
+                                                  struct window_surface *old_surface );
+extern void process_surface_message( struct flush_shm_surface_params *params );
 
 /* defwnd.c */
 extern LRESULT default_window_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam,
@@ -141,7 +144,7 @@ extern BOOL send_notify_message( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpar
 extern LRESULT send_message_timeout( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam,
                                      UINT flags, UINT timeout, BOOL ansi );
 extern size_t user_message_size( HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam,
-                                 BOOL other_process, BOOL ansi );
+                                 BOOL other_process, BOOL ansi, size_t *reply_size );
 extern void pack_user_message( void *buffer, size_t size, UINT message,
                                WPARAM wparam, LPARAM lparam, BOOL ansi );
 

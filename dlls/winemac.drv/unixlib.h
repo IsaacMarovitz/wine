@@ -27,7 +27,6 @@ enum macdrv_funcs
     unix_dnd_release,
     unix_dnd_retain,
     unix_init,
-    unix_notify_icon,
     unix_quit_result,
     unix_funcs_count
 };
@@ -70,13 +69,6 @@ struct init_params
     struct localized_string *strings;
 };
 
-/* macdrv_notify_icon params */
-struct notify_icon_params
-{
-    unsigned int msg;
-    struct _NOTIFYICONDATAW *data;
-};
-
 /* macdrv_quit_result params */
 struct quit_result_params
 {
@@ -91,6 +83,9 @@ enum macdrv_client_funcs
     client_func_dnd_query_drag,
     client_func_dnd_query_drop,
     client_func_dnd_query_exited,
+    client_func_regcreateopenkeyexa,
+    client_func_regqueryvalueexa,
+    client_func_regsetvalueexa,
     client_func_last
 };
 
@@ -134,6 +129,46 @@ struct dnd_query_drop_params
 struct dnd_query_exited_params
 {
     UINT32 hwnd;
+};
+
+/* macdrv_regcreateopenkeyexa params */
+struct regcreateopenkeyexa_params
+{
+    UINT32 create;
+    UINT32 hkey;
+    UINT64 name;
+    UINT32 reserved;
+    UINT64 class;
+    UINT32 options;
+    UINT32 access;
+    UINT64 security;
+    UINT64 retkey;
+    UINT64 disposition;
+    UINT32 result;
+};
+
+/* macdrv_regqueryvalueexa params */
+struct regqueryvalueexa_params
+{
+    UINT32 hkey;
+    UINT64 name;
+    UINT64 reserved;
+    UINT64 type;
+    UINT64 data;
+    UINT64 count;
+    UINT32 result;
+};
+
+/* macdrv_regsetvalueexa params */
+struct regsetvalueexa_params
+{
+    UINT32 hkey;
+    UINT64 name;
+    UINT32 reserved;
+    UINT32 type;
+    UINT64 data;
+    UINT32 count;
+    UINT32 result;
 };
 
 static inline void *param_ptr(UINT64 param)

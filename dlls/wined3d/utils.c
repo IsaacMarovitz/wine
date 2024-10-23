@@ -2535,8 +2535,20 @@ static void check_fbo_compat(struct wined3d_caps_gl_ctx *ctx, struct wined3d_for
             type_string = "depth / stencil";
         }
 
-        status = gl_info->fbo_ops.glCheckFramebufferStatus(GL_FRAMEBUFFER);
-        checkGLcall("Framebuffer format check");
+        /* CrossOver Hack #18775: glCheckFramebufferStatus() throws a Metal
+         * exception for GL_TEXTURE_CUBE_MAP and GL_RGB_422_APPLE on Big Sur on
+         * Apple Silicon. (Fixed on Monterey).
+         * Manually return GL_FRAMEBUFFER_UNSUPPORTED.
+         */
+        if (type == WINED3D_GL_RES_TYPE_TEX_CUBE && format->format == GL_RGB_422_APPLE)
+        {
+            status = GL_FRAMEBUFFER_UNSUPPORTED;
+        }
+        else
+        {
+            status = gl_info->fbo_ops.glCheckFramebufferStatus(GL_FRAMEBUFFER);
+            checkGLcall("Framebuffer format check");
+        }
 
         if (status == GL_FRAMEBUFFER_COMPLETE)
         {
@@ -4918,6 +4930,7 @@ const char *wined3d_debug_view_desc(const struct wined3d_view_desc *d, const str
     VIEW_FLAG_TO_STR(WINED3D_VIEW_TEXTURE_ARRAY);
     VIEW_FLAG_TO_STR(WINED3D_VIEW_READ_ONLY_DEPTH);
     VIEW_FLAG_TO_STR(WINED3D_VIEW_READ_ONLY_STENCIL);
+    VIEW_FLAG_TO_STR(WINED3D_VIEW_FORWARD_REFERENCE);
 #undef VIEW_FLAG_TO_STR
     if (flags)
         FIXME("Unrecognised view flag(s) %#x.\n", flags);
@@ -5643,7 +5656,7 @@ void get_identity_matrix(struct wined3d_matrix *mat)
 void get_modelview_matrix(const struct wined3d_context *context, const struct wined3d_state *state,
         unsigned int index, struct wined3d_matrix *mat)
 {
-    if (context->last_was_rhw)
+    if (context->stream_info.position_transformed)
         get_identity_matrix(mat);
     else
         multiply_matrix(mat, &state->transforms[WINED3D_TS_VIEW], &state->transforms[WINED3D_TS_WORLD_MATRIX(index)]);
@@ -5686,7 +5699,7 @@ void get_projection_matrix(const struct wined3d_context *context, const struct w
     else
         center_offset = 0.0f;
 
-    if (context->last_was_rhw)
+    if (context->stream_info.position_transformed)
     {
         /* Transform D3D RHW coordinates to OpenGL clip coordinates. */
         float x = state->viewports[0].x;
@@ -5849,22 +5862,21 @@ static void compute_texture_matrix(const struct wined3d_matrix *matrix, uint32_t
 void get_texture_matrix(const struct wined3d_context *context, const struct wined3d_state *state,
         const unsigned int tex, struct wined3d_matrix *mat)
 {
-    const struct wined3d_device *device = context->device;
     BOOL generated = (state->texture_states[tex][WINED3D_TSS_TEXCOORD_INDEX] & 0xffff0000)
             != WINED3DTSS_TCI_PASSTHRU;
-    unsigned int coord_idx = min(state->texture_states[tex][WINED3D_TSS_TEXCOORD_INDEX & 0x0000ffff],
+    unsigned int coord_idx = min(state->texture_states[tex][WINED3D_TSS_TEXCOORD_INDEX] & 0x0000ffff,
             WINED3D_MAX_FFP_TEXTURES - 1);
     struct wined3d_texture *texture = wined3d_state_get_ffp_texture(state, tex);
 
     compute_texture_matrix(&state->transforms[WINED3D_TS_TEXTURE0 + tex],
             state->texture_states[tex][WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS],
-            generated, context->last_was_rhw,
+            generated, context->stream_info.position_transformed,
             context->stream_info.use_map & (1u << (WINED3D_FFP_TEXCOORD0 + coord_idx))
             ? context->stream_info.elements[WINED3D_FFP_TEXCOORD0 + coord_idx].format->id
             : WINED3DFMT_UNKNOWN,
-            device->shader_backend->shader_has_ffp_proj_control(device->shader_priv), mat);
+            context->d3d_info->ffp_fragment_caps.proj_control, mat);
 
-    if ((context->lastWasPow2Texture & (1u << tex)) && texture)
+    if (texture && !(texture->flags & WINED3D_TEXTURE_POW2_MAT_IDENT))
     {
         if (generated)
             FIXME("Non-power-of-two texture being used with generated texture coords.\n");
@@ -6617,7 +6629,7 @@ void wined3d_ffp_get_fs_settings(const struct wined3d_context *context, const st
         }
     }
     settings->sRGB_write = !d3d_info->srgb_write_control && needs_srgb_write(d3d_info, state, &state->fb);
-    if (d3d_info->vs_clipping || !use_vs(state) || !state->render_states[WINED3D_RS_CLIPPING]
+    if (!d3d_info->emulated_clipplanes || !state->render_states[WINED3D_RS_CLIPPING]
             || !state->render_states[WINED3D_RS_CLIPPLANEENABLE])
     {
         /* No need to emulate clipplanes if GL supports native vertex shader clipping or if
@@ -6954,6 +6966,7 @@ void wined3d_ffp_get_vs_settings(const struct wined3d_context *context,
         settings->flatshading = FALSE;
 
     settings->swizzle_map = si->swizzle_map;
+    settings->emulated_clipplanes = find_emulated_clipplanes(context, state);
 }
 
 int wined3d_ffp_vertex_program_key_compare(const void *key, const struct wine_rb_entry *entry)

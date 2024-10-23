@@ -59,7 +59,6 @@ struct global_cursor
     rectangle_t          clip;             /* cursor clip rectangle */
     unsigned int         last_change;      /* time of last position change */
     user_handle_t        win;              /* window that contains the cursor */
-    user_handle_t        handle;           /* last set cursor handle */
 };
 
 struct desktop
@@ -98,7 +97,8 @@ extern void cleanup_clipboard_thread( struct thread *thread );
 
 extern void remove_thread_hooks( struct thread *thread );
 extern unsigned int get_active_hooks(void);
-extern struct thread *get_first_global_hook( int id );
+extern struct thread *get_first_global_hook( int id, thread_id_t *thread_id, client_ptr_t *proc );
+extern void disable_hung_hook( struct desktop *desktop, int id, thread_id_t thread_id, client_ptr_t proc );
 
 /* queue functions */
 

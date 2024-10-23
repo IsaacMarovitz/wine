@@ -286,7 +286,6 @@ struct shader_arb_priv
 
     const struct wined3d_vertex_pipe_ops *vertex_pipe;
     const struct wined3d_fragment_pipe_ops *fragment_pipe;
-    BOOL ffp_proj_control;
 };
 
 /* Context activation for state handlers is done by the caller. */
@@ -490,11 +489,7 @@ static void shader_arb_load_np2fixup_constants(const struct arb_ps_np2fixup_info
     while (active)
     {
         i = wined3d_bit_scan(&active);
-        if (!(tex = state->textures[i]))
-        {
-            ERR("Nonexistent texture is flagged for NP2 texcoord fixup.\n");
-            continue;
-        }
+        tex = texture_from_resource(state->shader_resource_view[WINED3D_SHADER_TYPE_PIXEL][i]->resource);
 
         idx = fixup->super.idx[i];
         tex_dim = &np2fixup_constants[(idx >> 1) * 4];
@@ -3847,7 +3842,7 @@ static GLuint shader_arb_generate_pshader(const struct wined3d_shader *shader,
         }
     }
 
-    if (shader_priv->clipplane_emulation != ~0U && args->clip)
+    if (shader_priv->clipplane_emulation != ~0U && args->super.clip)
     {
         shader_addline(buffer, "KIL fragment.texcoord[%u];\n", shader_priv->clipplane_emulation);
     }
@@ -4466,7 +4461,6 @@ static void find_arb_ps_compile_args(const struct wined3d_state *state,
         struct wined3d_context_gl *context_gl, const struct wined3d_shader *shader,
         struct arb_ps_compile_args *args)
 {
-    const struct wined3d_d3d_info *d3d_info = context_gl->c.d3d_info;
     const struct wined3d_gl_info *gl_info = context_gl->gl_info;
     struct wined3d_device *device = context_gl->c.device;
     const struct wined3d_ivec4 *int_consts;
@@ -4491,17 +4485,6 @@ static void find_arb_ps_compile_args(const struct wined3d_state *state,
         if (bool_consts[i])
             args->bools |= 1u << i;
     }
-
-    /* Only enable the clip plane emulation KIL if at least one clipplane is enabled. The KIL instruction
-     * is quite expensive because it forces the driver to disable early Z discards. It is cheaper to
-     * duplicate the shader than have a no-op KIL instruction in every shader
-     */
-    if (!d3d_info->vs_clipping && use_vs(state)
-            && state->render_states[WINED3D_RS_CLIPPING]
-            && state->render_states[WINED3D_RS_CLIPPLANEENABLE])
-        args->clip = 1;
-    else
-        args->clip = 0;
 
     /* Skip if unused or local, or supported natively */
     int_skip = ~shader->reg_maps.integer_constants | shader->reg_maps.local_int_consts;
@@ -4847,7 +4830,6 @@ static HRESULT shader_arb_alloc(struct wined3d_device *device, const struct wine
         const struct wined3d_fragment_pipe_ops *fragment_pipe)
 {
     const struct wined3d_d3d_info *d3d_info = &device->adapter->d3d_info;
-    struct fragment_caps fragment_caps;
     void *vertex_priv, *fragment_priv;
     struct shader_arb_priv *priv;
 
@@ -4878,8 +4860,6 @@ static HRESULT shader_arb_alloc(struct wined3d_device *device, const struct wine
 
     priv->vertex_pipe = vertex_pipe;
     priv->fragment_pipe = fragment_pipe;
-    fragment_pipe->get_caps(device->adapter, &fragment_caps);
-    priv->ffp_proj_control = fragment_caps.proj_control;
 
     device->vertex_priv = vertex_priv;
     device->fragment_priv = fragment_priv;
@@ -4964,6 +4944,11 @@ static void shader_arb_get_caps(const struct wined3d_adapter *adapter, struct sh
         }
         caps->vs_version = min(wined3d_settings.max_sm_vs, vs_version);
         caps->vs_uniform_count = min(WINED3D_MAX_VS_CONSTS_F, vs_consts);
+        if (cxgames_hacks.safe_vs_consts)
+        {
+            /* One for the posFixup, one for the helper const, and the clipplanes. */
+            caps->vs_uniform_count -= 2 + gl_info->limits.user_clip_distances;
+        }
     }
     else
     {
@@ -5699,13 +5684,6 @@ static void shader_arb_handle_instruction(const struct wined3d_shader_instructio
     shader_arb_add_instruction_modifiers(ins);
 }
 
-static BOOL shader_arb_has_ffp_proj_control(void *shader_priv)
-{
-    struct shader_arb_priv *priv = shader_priv;
-
-    return priv->ffp_proj_control;
-}
-
 static void shader_arb_precompile(void *shader_priv, struct wined3d_shader *shader) {}
 
 static uint64_t shader_arb_shader_compile(struct wined3d_context *context, const struct wined3d_shader_desc *shader_desc,
@@ -5733,7 +5711,6 @@ const struct wined3d_shader_backend_ops arb_program_shader_backend =
     shader_arb_init_context_state,
     shader_arb_get_caps,
     shader_arb_color_fixup_supported,
-    shader_arb_has_ffp_proj_control,
     shader_arb_shader_compile,
 };
 
@@ -6719,7 +6696,8 @@ static void state_arbfp_fog(struct wined3d_context *context, const struct wined3
         }
         else
         {
-            if (state->render_states[WINED3D_RS_FOGVERTEXMODE] == WINED3D_FOG_NONE || context->last_was_rhw)
+            if (state->render_states[WINED3D_RS_FOGVERTEXMODE] == WINED3D_FOG_NONE
+                    || context->stream_info.position_transformed)
                 new_source = FOGSOURCE_COORD;
             else
                 new_source = FOGSOURCE_FFP;

@@ -1467,7 +1467,7 @@ static void wined3d_view_vk_destroy_object(void *object)
             TRACE("Destroyed image view 0x%s.\n", wine_dbgstr_longlong(*ctx->vk_image_view));
         }
     }
-    if (ctx->bo_user)
+    if (ctx->bo_user && ctx->bo_user->valid)
         list_remove(&ctx->bo_user->entry);
     if (ctx->vk_counter_bo && ctx->vk_counter_bo->vk_buffer)
         wined3d_context_vk_destroy_bo(wined3d_context_vk(context), ctx->vk_counter_bo);
@@ -1522,13 +1522,9 @@ static void adapter_vk_destroy_rendertarget_view(struct wined3d_rendertarget_vie
 
     TRACE("view_vk %p.\n", view_vk);
 
-    /* Take a reference to the resource, in case releasing the resource
-     * would cause the device to be destroyed. */
-    wined3d_resource_incref(resource);
     wined3d_rendertarget_view_cleanup(&view_vk->v);
     wined3d_view_vk_destroy(resource->device, NULL, &view_vk->vk_image_view,
             NULL, NULL, NULL, &view_vk->command_buffer_id, view_vk);
-    wined3d_resource_decref(resource);
 }
 
 static HRESULT adapter_vk_create_shader_resource_view(const struct wined3d_view_desc *desc,
@@ -1567,13 +1563,6 @@ static void adapter_vk_destroy_shader_resource_view(struct wined3d_shader_resour
 
     TRACE("srv_vk %p.\n", srv_vk);
 
-    /* Take a reference to the resource. There are two reasons for this:
-     *  - Releasing the resource could in turn cause the device to be
-     *    destroyed, but we still need the device for
-     *    wined3d_view_vk_destroy().
-     *  - We shouldn't free buffer resources until after we've removed the
-     *    view from its bo_user list. */
-    wined3d_resource_incref(resource);
     if (resource->type == WINED3D_RTYPE_BUFFER)
         vk_buffer_view = &view_vk->u.vk_buffer_view;
     else
@@ -1581,7 +1570,6 @@ static void adapter_vk_destroy_shader_resource_view(struct wined3d_shader_resour
     wined3d_shader_resource_view_cleanup(&srv_vk->v);
     wined3d_view_vk_destroy(resource->device, vk_buffer_view, vk_image_view,
             &view_vk->bo_user, NULL, NULL, &view_vk->command_buffer_id, srv_vk);
-    wined3d_resource_decref(resource);
 }
 
 static HRESULT adapter_vk_create_unordered_access_view(const struct wined3d_view_desc *desc,
@@ -1620,13 +1608,6 @@ static void adapter_vk_destroy_unordered_access_view(struct wined3d_unordered_ac
 
     TRACE("uav_vk %p.\n", uav_vk);
 
-    /* Take a reference to the resource. There are two reasons for this:
-     *  - Releasing the resource could in turn cause the device to be
-     *    destroyed, but we still need the device for
-     *    wined3d_view_vk_destroy().
-     *  - We shouldn't free buffer resources until after we've removed the
-     *    view from its bo_user list. */
-    wined3d_resource_incref(resource);
     if (resource->type == WINED3D_RTYPE_BUFFER)
         vk_buffer_view = &view_vk->u.vk_buffer_view;
     else
@@ -1634,7 +1615,6 @@ static void adapter_vk_destroy_unordered_access_view(struct wined3d_unordered_ac
     wined3d_unordered_access_view_cleanup(&uav_vk->v);
     wined3d_view_vk_destroy(resource->device, vk_buffer_view, vk_image_view, &view_vk->bo_user,
             &uav_vk->counter_bo, &uav_vk->vk_counter_view, &view_vk->command_buffer_id, uav_vk);
-    wined3d_resource_decref(resource);
 }
 
 static HRESULT adapter_vk_create_sampler(struct wined3d_device *device, const struct wined3d_sampler_desc *desc,
@@ -2281,6 +2261,7 @@ static void wined3d_adapter_vk_init_d3d_info(struct wined3d_adapter_vk *adapter_
     struct wined3d_vertex_caps vertex_caps;
     unsigned int sample_counts_mask;
     struct shader_caps shader_caps;
+    bool moltenvk;
 
     get_physical_device_info(adapter_vk, &device_info);
 
@@ -2337,6 +2318,7 @@ static void wined3d_adapter_vk_init_d3d_info(struct wined3d_adapter_vk *adapter_
     d3d_info->clip_control = true;
     d3d_info->full_ffp_varyings = !!(shader_caps.wined3d_caps & WINED3D_SHADER_CAP_FULL_FFP_VARYINGS);
     d3d_info->scaled_resolve = false;
+    d3d_info->multithread_safe = true;
     d3d_info->pbo = true;
     d3d_info->feature_level = feature_level_from_caps(&device_info, &shader_caps);
     d3d_info->subpixel_viewport = true;
@@ -2353,7 +2335,9 @@ static void wined3d_adapter_vk_init_d3d_info(struct wined3d_adapter_vk *adapter_
 
     d3d_info->multisample_draw_location = WINED3D_LOCATION_TEXTURE_RGB;
 
-    vk_info->multiple_viewports = device_info.features2.features.multiViewport;
+    /* HACK: Disable multiple viewports when running with MoltenVK. As of writing, it causes glitches in multiple games. */
+    moltenvk = adapter_vk->driver_properties.driverID == VK_DRIVER_ID_MOLTENVK;
+    if (!moltenvk) vk_info->multiple_viewports = device_info.features2.features.multiViewport;
 }
 
 static bool wined3d_adapter_vk_init_device_extensions(struct wined3d_adapter_vk *adapter_vk)
@@ -2382,6 +2366,7 @@ static bool wined3d_adapter_vk_init_device_extensions(struct wined3d_adapter_vk 
         {VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME,      VK_API_VERSION_1_1},
         {VK_KHR_SWAPCHAIN_EXTENSION_NAME,                   ~0u,                true},
         {VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,            VK_API_VERSION_1_2},
+        {VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME,           VK_API_VERSION_1_2},
     };
 
     static const struct
@@ -2509,11 +2494,31 @@ static BOOL wined3d_adapter_vk_init(struct wined3d_adapter_vk *adapter_vk,
     properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
     properties2.pNext = &id_properties;
 
+    memset(&adapter_vk->driver_properties, 0, sizeof(adapter_vk->driver_properties));
+    adapter_vk->driver_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
+    id_properties.pNext = &adapter_vk->driver_properties;
+
     if (vk_info->vk_ops.vkGetPhysicalDeviceProperties2)
         VK_CALL(vkGetPhysicalDeviceProperties2(adapter_vk->physical_device, &properties2));
     else
         VK_CALL(vkGetPhysicalDeviceProperties(adapter_vk->physical_device, &properties2.properties));
     adapter_vk->device_limits = properties2.properties.limits;
+
+    /* CW HACK 18311: Use the Vulkan renderer on macOS for d3d10/11. */
+    if (wined3d_settings.renderer == WINED3D_RENDERER_AUTO)
+    {
+        bool d3d10 = !(wined3d_creation_flags & WINED3D_PIXEL_CENTER_INTEGER);
+        bool moltenvk = adapter_vk->driver_properties.driverID == VK_DRIVER_ID_MOLTENVK;
+
+        if (!moltenvk || !d3d10)
+        {
+            if (!moltenvk)
+                TRACE("Not running on MoltenVK, defaulting to the OpenGL backend.\n");
+            if (!d3d10)
+                TRACE("Application using < d3d10 API, defaulting to the OpenGL backend.\n");
+            goto fail_vulkan;
+        }
+    }
 
     VK_CALL(vkGetPhysicalDeviceMemoryProperties(adapter_vk->physical_device, &adapter_vk->memory_properties));
 

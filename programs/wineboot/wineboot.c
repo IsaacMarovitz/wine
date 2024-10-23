@@ -1494,7 +1494,8 @@ static void update_wineprefix( BOOL force )
 
         if ((process = start_rundll32( inf_path, L"PreInstall", IMAGE_FILE_MACHINE_TARGET_HOST )))
         {
-            HWND hwnd = show_wait_window();
+            /* HACK: Disable the wait window as it is deemed confusing */
+            HWND hwnd = 1 ? NULL : show_wait_window();
             for (;;)
             {
                 if (process)

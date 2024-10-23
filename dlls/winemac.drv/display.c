@@ -36,6 +36,42 @@ WINE_DEFAULT_DEBUG_CHANNEL(display);
 
 #define NEXT_DEVMODEW(mode) ((DEVMODEW *)((char *)((mode) + 1) + (mode)->dmDriverExtra))
 
+/* CrossOver Hack #18576: don't check for kDisplayModeSafeFlag on Apple Silicon. */
+/* Also used by CrossOver Hack #20512. */
+#include <sys/types.h>
+#include <sys/sysctl.h>
+static int apple_silicon_status;
+static void init_is_apple_silicon(void)
+{
+    /* returns 0 for native process or on error, 1 for translated */
+    int ret = 0;
+    size_t size = sizeof(ret);
+    if (sysctlbyname("sysctl.proc_translated", &ret, &size, NULL, 0) == -1)
+        apple_silicon_status = 0;
+    else
+        apple_silicon_status = ret;
+}
+int is_apple_silicon(void)
+{
+    static pthread_once_t init_once = PTHREAD_ONCE_INIT;
+    pthread_once(&init_once, init_is_apple_silicon);
+    return apple_silicon_status;
+}
+
+/* CrossOver Hack #20512 */
+int is_skyrim_se_launcher(void)
+{
+    static const WCHAR skyrimselauncher_exeW[] = {'S','k','y','r','i','m','S','E','L','a','u','n','c','h','e','r','.','e','x','e',0};
+    WCHAR *name, *module_exe;
+
+    name = NtCurrentTeb()->Peb->ProcessParameters->ImagePathName.Buffer;
+    module_exe = wcsrchr(name, '\\');
+    module_exe = module_exe ? module_exe + 1 : name;
+
+    return !wcsicmp(module_exe, skyrimselauncher_exeW);
+}
+
+
 struct display_mode_descriptor
 {
     DWORD width;
@@ -93,7 +129,9 @@ static int display_mode_bits_per_pixel(CGDisplayModeRef display_mode)
 static BOOL display_mode_is_supported(CGDisplayModeRef display_mode)
 {
     uint32_t io_flags = CGDisplayModeGetIOFlags(display_mode);
-    return (io_flags & kDisplayModeValidFlag) && (io_flags & kDisplayModeSafeFlag);
+    /* CrossOver Hack #18576: don't check for kDisplayModeSafeFlag on Apple Silicon. */
+    return (io_flags & kDisplayModeValidFlag) &&
+            ((io_flags & kDisplayModeSafeFlag) || is_apple_silicon());
 }
 
 
@@ -149,7 +187,7 @@ static BOOL write_display_settings(HKEY parent_hkey, CGDirectDisplayID displayID
     char display_key_name[19];
     HKEY display_hkey;
     CGDisplayModeRef display_mode;
-    UNICODE_STRING str;
+    UNICODE_STRING str = RTL_CONSTANT_STRING(pixelencodingW);
     DWORD val;
     CFStringRef pixel_encoding;
     size_t len;
@@ -189,7 +227,6 @@ static BOOL write_display_settings(HKEY parent_hkey, CGDirectDisplayID displayID
     CFStringGetCharacters(pixel_encoding, CFRangeMake(0, len), (UniChar*)buf);
     buf[len] = 0;
     CFRelease(pixel_encoding);
-    RtlInitUnicodeString(&str, pixelencodingW);
     if (NtSetValueKey(display_hkey, &str, 0, REG_SZ, (const BYTE*)buf, (len + 1) * sizeof(WCHAR)))
         goto fail;
 

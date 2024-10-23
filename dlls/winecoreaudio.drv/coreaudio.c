@@ -68,6 +68,7 @@
 #include "wine/unixlib.h"
 
 #include "unixlib.h"
+#include "coreaudio_cocoa.h"
 
 #if !defined(MAC_OS_VERSION_12_0) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_VERSION_12_0
 #define kAudioObjectPropertyElementMain kAudioObjectPropertyElementMaster
@@ -83,8 +84,7 @@ typedef OSSpinLock                  os_unfair_lock;
 #endif
 
 WINE_DEFAULT_DEBUG_CHANNEL(coreaudio);
-
-#define MAX_DEV_NAME_LEN 10 /* Max 32 bit digits */
+WINE_DECLARE_DEBUG_CHANNEL(winediag);
 
 struct coreaudio_stream
 {
@@ -242,6 +242,7 @@ static NTSTATUS unix_get_endpoint_ids(void *args)
     struct endpoint_info
     {
         CFStringRef name;
+        CFStringRef uid;
         AudioDeviceID id;
     } *info;
     OSStatus sc;
@@ -293,13 +294,13 @@ static NTSTATUS unix_get_endpoint_ids(void *args)
         return STATUS_SUCCESS;
     }
 
-    addr.mSelector = kAudioObjectPropertyName;
     addr.mScope = get_scope(params->flow);
     addr.mElement = 0;
 
     for(i = 0; i < num_devices; i++){
         if(!device_has_channels(devices[i], params->flow)) continue;
 
+        addr.mSelector = kAudioObjectPropertyName;
         size = sizeof(CFStringRef);
         sc = AudioObjectGetPropertyData(devices[i], &addr, 0, NULL, &size, &info[params->num].name);
         if(sc != noErr){
@@ -307,6 +308,16 @@ static NTSTATUS unix_get_endpoint_ids(void *args)
                  (unsigned int)devices[i], (int)sc);
             continue;
         }
+
+        addr.mSelector = kAudioDevicePropertyDeviceUID;
+        size = sizeof(CFStringRef);
+        sc = AudioObjectGetPropertyData(devices[i], &addr, 0, NULL, &size, &info[params->num].uid);
+        if(sc != noErr){
+            WARN("Unable to get UID property for device %u: %x\n",
+                 (unsigned int)devices[i], (int)sc);
+            continue;
+        }
+
         info[params->num++].id = devices[i];
     }
     free(devices);
@@ -316,7 +327,12 @@ static NTSTATUS unix_get_endpoint_ids(void *args)
 
     for(i = 0; i < params->num; i++){
         const SIZE_T name_len = CFStringGetLength(info[i].name) + 1;
-        const SIZE_T device_len = MAX_DEV_NAME_LEN + 1;
+        CFIndex device_len;
+
+        CFStringGetBytes(info[i].uid, CFRangeMake(0, CFStringGetLength(info[i].uid)), kCFStringEncodingUTF8,
+                         0, false, NULL, 0, &device_len);
+        device_len++;   /* for null terminator */
+
         needed += name_len * sizeof(WCHAR) + ((device_len + 1) & ~1);
 
         if(needed <= params->size){
@@ -325,12 +341,17 @@ static NTSTATUS unix_get_endpoint_ids(void *args)
             CFStringGetCharacters(info[i].name, CFRangeMake(0, name_len - 1), ptr);
             ptr[name_len - 1] = 0;
             offset += name_len * sizeof(WCHAR);
+
             endpoint->device = offset;
-            sprintf((char *)params->endpoints + offset, "%u", (unsigned int)info[i].id);
+            CFStringGetBytes(info[i].uid, CFRangeMake(0, CFStringGetLength(info[i].uid)), kCFStringEncodingUTF8,
+                             0, false, (UInt8 *)params->endpoints + offset, params->size - offset, NULL);
+            ((char *)params->endpoints)[offset + device_len - 1] = '\0';
             offset += (device_len + 1) & ~1;
+
             endpoint++;
         }
         CFRelease(info[i].name);
+        CFRelease(info[i].uid);
         if(info[i].id == default_id) params->default_idx = i;
     }
     free(info);
@@ -669,7 +690,31 @@ static HRESULT ca_setup_audiounit(EDataFlow dataflow, AudioComponentInstance uni
 
 static AudioDeviceID dev_id_from_device(const char *device)
 {
-    return strtoul(device, NULL, 10);
+    AudioDeviceID id;
+    CFStringRef uid;
+    UInt32 size;
+    OSStatus sc;
+    const AudioObjectPropertyAddress addr =
+    {
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain,
+        .mSelector = kAudioHardwarePropertyTranslateUIDToDevice,
+    };
+
+    uid = CFStringCreateWithCStringNoCopy(NULL, device, kCFStringEncodingUTF8, kCFAllocatorNull);
+
+    size = sizeof(id);
+    sc = AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, sizeof(uid), &uid, &size, &id);
+    CFRelease(uid);
+    if(sc != noErr){
+        WARN("Failed to get device ID for UID %s: %x\n", device, (int)sc);
+        return kAudioObjectUnknown;
+    }
+
+    if (id == kAudioObjectUnknown)
+        WARN("Failed to get device ID for UID %s\n", device);
+
+    return id;
 }
 
 static NTSTATUS unix_create_stream(void *args)
@@ -757,6 +802,22 @@ static NTSTATUS unix_create_stream(void *args)
         WARN("Couldn't set callback: %x\n", (int)sc);
         params->result = osstatus_to_hresult(sc);
         goto end;
+    }
+
+    if (stream->flow == eCapture) {
+        /* On 10.14 and later:
+         * Check the audio capture/microphone authorization status, and explicitly
+         * request it if the user hasn't previously granted or denied permission.
+         */
+        int authstatus = CoreAudio_get_capture_authorization_status();
+        TRACE("Audio capture authorization status: %d\n", authstatus);
+
+        if (authstatus == NOT_DETERMINED)
+            authstatus = CoreAudio_request_capture_authorization();
+
+        if (authstatus == 0)
+            ERR_(winediag)("Microphone/audio capture permission was denied. "
+                           "This can be enabled under Security & Privacy in System Preferences.\n");
     }
 
     sc = AudioUnitInitialize(stream->unit);

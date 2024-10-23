@@ -37,8 +37,13 @@ static FILE_OBJECTID_BUFFER windir_id, sysdir_id;
 
 static inline NTSTATUS get_file_id( HANDLE handle, FILE_OBJECTID_BUFFER *id )
 {
+    IO_STATUS_BLOCK32 io32;
     IO_STATUS_BLOCK io;
 
+    /* HACK: this shouldn't be necessary since we open the file for synchronous
+     * I/O, but we currently ignore that in ntdll.so and always write the 32-bit
+     * IOSB */
+    io.Pointer = &io32;
     return NtFsControlFile( handle, 0, NULL, NULL, &io, FSCTL_GET_OBJECT_ID, NULL, 0, id, sizeof(*id) );
 }
 
@@ -140,6 +145,15 @@ BOOL get_file_redirect( OBJECT_ATTRIBUTES *attr )
     UNICODE_STRING redir;
 
     if (!len) return FALSE;
+
+    /* CW HACK 20810: disable FS redirection when 32-bit-only bottle is being used */
+    {
+        UNICODE_STRING val_str, name_str = RTL_CONSTANT_STRING( L"WINEWOW6432BPREFIXMODE" );
+
+        val_str.MaximumLength = 0;
+        if (RtlQueryEnvironmentVariable_U( NULL, &name_str, &val_str ) != STATUS_VARIABLE_NOT_FOUND)
+            return FALSE;
+    }
 
     if (!attr->RootDirectory)
     {
@@ -929,7 +943,6 @@ NTSTATUS WINAPI wow64_NtWriteFileGather( UINT *args )
     put_iosb( io32, &io );
     return status;
 }
-
 
 /**********************************************************************
  *           wow64_wine_nt_to_unix_file_name

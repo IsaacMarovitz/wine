@@ -18,6 +18,9 @@
 /* Define to 1 if you have the <asm/user.h> header file. */
 #undef HAVE_ASM_USER_H
 
+/* Define to 1 if you have the <AVFoundation/AVFoundation.h> header file. */
+#undef HAVE_AVFOUNDATION_AVFOUNDATION_H
+
 /* Define to 1 if you have the <capi20.h> header file. */
 #undef HAVE_CAPI20_H
 
@@ -107,6 +110,12 @@
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
+
+/* Define to 1 if you have the <IOKit/usb/IOUSBLib.h> header file. */
+#undef HAVE_IOKIT_USB_IOUSBLIB_H
+
+/* Define to 1 if you have the `IOServiceMatching' function. */
+#undef HAVE_IOSERVICEMATCHING
 
 /* Define to 1 if you have the `kqueue' function. */
 #undef HAVE_KQUEUE
